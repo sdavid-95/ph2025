@@ -37,21 +37,29 @@ int getSpeedLimitBasedOnConditions()
 // ----------- Main ML message processor ----------
 void processCameraMessage(const String &msg)
 {
+    // Clean the message just in case (remove whitespace/newlines)
+    String cleanMsg = msg;
+    cleanMsg.trim();
 
     // 1) HARD RED COMMAND FROM CAMERA
-    // "R" means: force red light and flatten bumper, no matter the speed
-    if (msg == "R")
+    // "R" means: force red light and flatten bumper (or raise, depending on safety logic)
+    if (cleanMsg == "R")
     {
         trafficUpdate('R'); // car RED, ped GREEN
         setBumperAngle(0);  // bumper flat (safe)
         return;
     }
-
-    // 2) SPEED MESSAGE: "S:<value>"
-    if (msg.startsWith("S:"))
+    
+    // 2) SPEED MESSAGE: "S:<value>" (e.g., "S:45")
+    else if (cleanMsg.startsWith("S:"))
     {
-        int speed = msg.substring(2).toInt();
+        // Extract the number part after "S:"
+        // substring(2) takes everything from index 2 to the end
+        String speedString = cleanMsg.substring(2);
+        int speed = speedString.toInt();
 
+        // LOGIC: Decide on action based on speed vs. condition
+        
         // Decide if limit is 50 or 30 based on road conditions
         int limit = getSpeedLimitBasedOnConditions();
 
@@ -62,13 +70,13 @@ void processCameraMessage(const String &msg)
 
         if (over <= 0)
         {
-            // at or below limit → bumper down
+            // At or below limit → bumper down, green light
             angle = 0;
             trafficUpdate('N'); // normal: car green, ped red
         }
         else
         {
-            // over limit → increase angle based on how much over
+            // Dynamic Bumper: The faster they go, the higher the bump
             if (over <= 10)
                 angle = 10;
             else if (over <= 20)
@@ -78,7 +86,9 @@ void processCameraMessage(const String &msg)
             else
                 angle = 40; // way too fast
 
-            // If over the limit by more than 10 km/h -> RED light
+            // Traffic Light Logic:
+            // If slightly speeding (<=10 km/h over), maybe just warn with the bump
+            // If recklessly speeding (>10 km/h over), turn RED to stop them
             if (over > 10)
             {
                 trafficUpdate('R'); // car red, ped green
@@ -90,5 +100,13 @@ void processCameraMessage(const String &msg)
         }
 
         setBumperAngle(angle);
+    }
+    
+    // 3) EMERGENCY COMMAND "L" (Legacy/Simple Lower)
+    // Sometimes helpful to have a direct "L" command for testing
+    else if (cleanMsg == "L") 
+    {
+        trafficUpdate('N');
+        setBumperAngle(0);
     }
 }
