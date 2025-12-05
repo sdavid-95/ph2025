@@ -1,12 +1,15 @@
 #include <Arduino.h>
 #include <DHT.h>
 
+int myFunction(int, int);
 #define DHTPIN 1       // GPIO 1 on ESP32-C3 Super Mini
 #define DHTTYPE DHT22  // Sensor type
 #define HUMIDITY_PIN 0 
 
-DHT dht(DHTPIN, DHTTYPE);
+void moveBumper(bool move_bumper)
+{
 
+}
 // Function declaration
 void readDHT();
 void readAnalogHumidity();
