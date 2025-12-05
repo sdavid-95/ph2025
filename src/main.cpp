@@ -1,18 +1,37 @@
 #include <Arduino.h>
+#include <DHT.h>
 
-// put function declarations here:
-int myFunction(int, int);
+#define DHTPIN 1       // GPIO 1 on ESP32-C3 Super Mini
+#define DHTTYPE DHT22  // Sensor type
+
+DHT dht(DHTPIN, DHTTYPE);
+
+// Function declaration
+void readDHT();
 
 void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+  Serial.begin(115200);
+  dht.begin();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  readDHT();
+  delay(2000);  // DHT22 needs 2 sec between reads
 }
 
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
+// Function to read temperature & humidity
+void readDHT() {
+  float h = dht.readHumidity();
+  float t = dht.readTemperature(); // Celsius
+
+  if (isnan(h) || isnan(t)) {
+    Serial.println("Failed to read from DHT22!");
+    return;
+  }
+
+  Serial.print("Humidity: ");
+  Serial.print(h);
+  Serial.print(" %  |  Temperature: ");
+  Serial.print(t);
+  Serial.println(" °C");
 }
