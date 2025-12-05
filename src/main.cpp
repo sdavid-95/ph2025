@@ -1,7 +1,11 @@
 #include <Arduino.h>
 
-// put function declarations here:
 int myFunction(int, int);
+
+void moveBumper(bool move_bumper)
+{
+
+}
 
 void setup() {
   // put your setup code here, to run once:
