@@ -43,3 +43,21 @@ void readAnalogHumidity() {
     Serial.print(voltage);
     Serial.println(" V");
 }
+
+float getTemperature() {
+    float h = dht.readHumidity();
+    float t = dht.readTemperature();
+    if (isnan(h) || isnan(t)) return 25.0; // fallback
+    return t;
+}
+
+float getHumidityAir() {
+    float h = dht.readHumidity();
+    if (isnan(h)) return 50.0;
+    return h;
+}
+
+int getHumidityGround() {
+    return analogRead(HUMIDITY_PIN);
+}
+
