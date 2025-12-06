@@ -51,6 +51,9 @@ pinMode(7, OUTPUT);
 pinMode(8, OUTPUT);
 pinMode(9, OUTPUT);
 
+digitalWrite(7, HIGH);
+digitalWrite(8, HIGH);
+
   Serial.begin(115200);
   Serial.setTimeout(50);
   pinMode(A0, INPUT);
