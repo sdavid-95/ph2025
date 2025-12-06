@@ -18,11 +18,11 @@ MIN_MOVE_DISTANCE = 3
 MAX_PHYSICAL_SPEED = 2000 
 
 # --- SETUP ---
-try:
-    arduino = serial.Serial(port='COM3', baudrate=115200, timeout=.1)
-    time.sleep(2)
-except:
-    arduino = None
+# try:
+#     arduino = serial.Serial(port='COM3', baudrate=115200, timeout=.1)
+#     time.sleep(2)
+# except:
+#     arduino = None
 
 model = YOLO("yolov8n.pt") 
 print("Initializing OCR Engine...")
@@ -97,11 +97,12 @@ while True:
     if not ret: break
     
     current_time = time.time()
-    results = model.track(frame, persist=True, classes=[67], verbose=False)
+    results = model.track(frame, persist=True, classes=[2,3,5,7], verbose=False)
     
     display_frame = frame.copy()
     highest_speed_in_frame = 0 
     emergency_vehicle_detected = False
+    avg_speed=0
 
     if results[0].boxes.id is not None:
         boxes = results[0].boxes.xywh.cpu()
@@ -177,13 +178,13 @@ while True:
 
     # --- ACTUATOR LOGIC ---
     if emergency_vehicle_detected:
-        if arduino: arduino.write(b'L')
+        # if arduino: arduino.write(b'L')
         status, color = "EMERGENCY! BUMP LOWERED", (0, 255, 0)
     elif highest_speed_in_frame > SPEED_LIMIT_PIXELS:
-        if arduino: arduino.write(b'R')
+        # if arduino: arduino.write(b'R')
         status, color = "SPEEDING! BUMP RAISED", (0, 0, 255)
     else:
-        if arduino: arduino.write(b'L')
+        # if arduino: arduino.write(b'L')
         status, color = "SAFE SPEED", (255, 255, 0)
      # 1. Prepare the command
     command_str = ""
@@ -212,14 +213,14 @@ while True:
             status_color = (255, 255, 0)
 
     # 2. Send to ESP32
-    if arduino:
-        try:
-            # .encode() converts string to bytes
-            arduino.write(command_str.encode()) 
-            print(f"Sent to ESP32: {command_str.strip()}")
-        except Exception as e:
-            print(f"Serial Error: {e}")
-    # HUD
+    # if arduino:
+    #     try:
+    #         # .encode() converts string to bytes
+    #         arduino.write(command_str.encode()) 
+    #         print(f"Sent to ESP32: {command_str.strip()}")
+    #     except Exception as e:
+    #         print(f"Serial Error: {e}")
+    # # HUD
     cv2.putText(display_frame, f"STATUS: {status}", (20, h_frame - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
     cv2.imshow('Actibump Plate Detector', display_frame)
     if cv2.waitKey(1) & 0xFF == ord('q'): break
