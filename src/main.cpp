@@ -66,14 +66,15 @@ void loop() {
   }else{
     MaxSpeed = MaxSpeedGoodWeather;
   }
-  Serial.println(k);
 
-  
-  ToggleBumper();
-
-  delay(800);
   while(Serial.available()){
     CarSpeed =  Serial.readString().toInt();
+  }
+  if(CarSpeed > MaxSpeed+4){
+    ToggleBumper();
+    delay(4000);
+    ToggleBumper();
+    CarSpeed = 0;
   }
 
 }
