@@ -7,15 +7,38 @@ import easyocr
 import re
 import threading
 import queue
+import os
 from ultralytics import YOLO
 from collections import defaultdict, deque
+from supabase import create_client, Client
+from dotenv import load_dotenv
+from datetime import datetime, timezone
+
+load_dotenv()
 
 # --- CONFIGURATION ---
-SPEED_LIMIT_PIXELS = 300
+SPEED_LIMIT_PIXELS = 50
 OCR_INTERVAL = 0.5 
 SMOOTHING_WINDOW = 6    
 MIN_MOVE_DISTANCE = 3   
-MAX_PHYSICAL_SPEED = 2000 
+MAX_PHYSICAL_SPEED = 2000
+
+# --- SUPABASE CONFIGURATION ---
+SUPABASE_URL = os.getenv('SUPABASE_URL', '')
+SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
+SPEED_BUMP_ID = os.getenv('SPEED_BUMP_ID', '')  # UUID of the speed bump to update
+
+# Initialize Supabase client
+supabase: Client | None = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("Supabase client initialized successfully")
+    except Exception as e:
+        print(f"Failed to initialize Supabase: {e}")
+        supabase = None
+else:
+    print("Warning: Supabase credentials not found. Set SUPABASE_URL and SUPABASE_KEY environment variables.") 
 
 # --- SETUP ---
 # try:
@@ -35,7 +58,12 @@ plate_data = {}
 last_ocr_time = {}
 
 speed_buffers = defaultdict(lambda: deque(maxlen=SMOOTHING_WINDOW))
-track_history = {} 
+track_history = {}
+# Track cars that have passed (to avoid double counting)
+passed_cars = set()  # Set of track_ids that have been counted
+car_count = 0  # Total count of cars that have passed
+CAR_EXIT_THRESHOLD = 2.0  # Seconds after a car disappears before counting it as passed
+last_seen_time = {}  # Track when each car was last seen 
 
 def ocr_worker():
     while True:
@@ -92,6 +120,29 @@ h_frame, w_frame = sample_frame.shape[:2]
 
 print("System Started. Now highlighting detected plates!")
 
+# Function to update Supabase with car count
+def update_supabase_count(count: int):
+    if supabase and SPEED_BUMP_ID:
+        try:
+            current_time = datetime.now(timezone.utc).isoformat()
+            result = supabase.table('speed_bumps').update({
+                'car_count': count,
+                'last_updated': current_time
+            }).eq('id', SPEED_BUMP_ID).execute()
+            print(f"Updated Supabase: car_count = {count}")
+        except Exception as e:
+            print(f"Error updating Supabase: {e}")
+
+# Load initial car count from Supabase
+if supabase and SPEED_BUMP_ID:
+    try:
+        result = supabase.table('speed_bumps').select('car_count').eq('id', SPEED_BUMP_ID).execute()
+        if result.data and len(result.data) > 0:
+            car_count = result.data[0].get('car_count', 0)
+            print(f"Loaded initial car count from Supabase: {car_count}")
+    except Exception as e:
+        print(f"Error loading initial count from Supabase: {e}")
+
 while True:
     ret, frame = cap.read()
     if not ret: break
@@ -104,6 +155,50 @@ while True:
     emergency_vehicle_detected = False
     avg_speed=0
 
+    # Check for cars that have exited (not seen recently)
+    current_track_ids = set()
+    if results[0].boxes.id is not None:
+        current_track_ids = set(results[0].boxes.id.int().cpu().tolist())
+    
+    # Mark all current cars as seen
+    for track_id in current_track_ids:
+        last_seen_time[track_id] = current_time
+    
+    # Check for cars that have exited (not seen for CAR_EXIT_THRESHOLD seconds)
+    exited_cars = []
+    for track_id, last_seen in list(last_seen_time.items()):
+        if track_id not in current_track_ids:
+            if current_time - last_seen > CAR_EXIT_THRESHOLD:
+                if track_id not in passed_cars:
+                    # Calculate the car's average speed before cleaning up
+                    car_avg_speed = 0
+                    if track_id in speed_buffers and len(speed_buffers[track_id]) > 0:
+                        car_avg_speed = sum(speed_buffers[track_id]) / len(speed_buffers[track_id])
+                    
+                    # Only count and update if the car exceeded the speed limit
+                    if car_avg_speed > SPEED_LIMIT_PIXELS:
+                        exited_cars.append(track_id)
+                        passed_cars.add(track_id)
+                        car_count += 1
+                        print(f"Car {track_id} passed at {int(car_avg_speed)} px/s (exceeded limit)! Total count: {car_count}")
+                        # Update Supabase immediately when a speeding car passes
+                        update_supabase_count(car_count)
+                    else:
+                        # Mark as passed but don't count it
+                        passed_cars.add(track_id)
+                        print(f"Car {track_id} passed at {int(car_avg_speed)} px/s (within limit) - not counted")
+                
+                # Clean up tracking data for exited cars
+                if track_id in track_history:
+                    del track_history[track_id]
+                if track_id in speed_buffers:
+                    del speed_buffers[track_id]
+                if track_id in last_ocr_time:
+                    del last_ocr_time[track_id]
+                if track_id in plate_data:
+                    del plate_data[track_id]
+                del last_seen_time[track_id]
+    
     if results[0].boxes.id is not None:
         boxes = results[0].boxes.xywh.cpu()
         track_ids = results[0].boxes.id.int().cpu().tolist()
@@ -220,8 +315,9 @@ while True:
     #         print(f"Sent to ESP32: {command_str.strip()}")
     #     except Exception as e:
     #         print(f"Serial Error: {e}")
-    # # HUD
+    #     # HUD
     cv2.putText(display_frame, f"STATUS: {status}", (20, h_frame - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+    cv2.putText(display_frame, f"CARS PASSED: {car_count}", (20, h_frame - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
     cv2.imshow('Actibump Plate Detector', display_frame)
     if cv2.waitKey(1) & 0xFF == ord('q'): break
 
