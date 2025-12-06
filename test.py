@@ -2,7 +2,6 @@ import cv2
 import serial
 import time
 import math
-import numpy as np
 import easyocr
 import re
 import threading
@@ -20,7 +19,7 @@ load_dotenv()
 SPEED_LIMIT_PIXELS = 50
 OCR_INTERVAL = 0.5 
 SMOOTHING_WINDOW = 6    
-MIN_MOVE_DISTANCE = 3   
+MIN_MOVE_DISTANCE = 3 
 MAX_PHYSICAL_SPEED = 2000
 
 # --- SUPABASE CONFIGURATION ---
@@ -41,11 +40,11 @@ else:
     print("Warning: Supabase credentials not found. Set SUPABASE_URL and SUPABASE_KEY environment variables.") 
 
 # --- SETUP ---
-# try:
-#     arduino = serial.Serial(port='COM3', baudrate=115200, timeout=.1)
-#     time.sleep(2)
-# except:
-#     arduino = None
+try:
+    arduino = serial.Serial(port='COM3', baudrate=115200, timeout=.1)
+    time.sleep(2)
+except:
+    arduino = None
 
 model = YOLO("yolov8n.pt") 
 print("Initializing OCR Engine...")
@@ -273,13 +272,13 @@ while True:
 
     # --- ACTUATOR LOGIC ---
     if emergency_vehicle_detected:
-        # if arduino: arduino.write(b'L')
+        if arduino: arduino.write(b'L')
         status, color = "EMERGENCY! BUMP LOWERED", (0, 255, 0)
     elif highest_speed_in_frame > SPEED_LIMIT_PIXELS:
-        # if arduino: arduino.write(b'R')
+        if arduino: arduino.write(b'R')
         status, color = "SPEEDING! BUMP RAISED", (0, 0, 255)
     else:
-        # if arduino: arduino.write(b'L')
+        if arduino: arduino.write(b'L')
         status, color = "SAFE SPEED", (255, 255, 0)
      # 1. Prepare the command
     command_str = ""
@@ -309,12 +308,12 @@ while True:
 
     # 2. Send to ESP32
     # if arduino:
-    #     try:
-    #         # .encode() converts string to bytes
-    #         arduino.write(command_str.encode()) 
-    #         print(f"Sent to ESP32: {command_str.strip()}")
-    #     except Exception as e:
-    #         print(f"Serial Error: {e}")
+        try:
+            # .encode() converts string to bytes
+            arduino.write(command_str.encode()) 
+            print(f"Sent to ESP32: {command_str.strip()}")
+        except Exception as e:
+            print(f"Serial Error: {e}")
     #     # HUD
     cv2.putText(display_frame, f"STATUS: {status}", (20, h_frame - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
     cv2.putText(display_frame, f"CARS PASSED: {car_count}", (20, h_frame - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
