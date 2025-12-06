@@ -1,51 +1,79 @@
 #include <Arduino.h>
-#include "sensors.h"
-#include "controller.h"
-#include "traffic.h"
-#include "actuator.h"
+#include <DHT.h>
+#include <ESP32Servo.h>
 
-// Buffer to store incoming serial data
-String inputString = "";
-bool stringComplete = false;
+
+Servo bumper;
+
+DHT dht(1, DHT22);
+
+int CarSpeed = 0;
+int MaxSpeed = 50;
+int MaxSpeedBadWeather = 30;
+int MaxSpeedGoodWeather = 50;
+
+void SetTrafficLightsCar(bool isRed){
+  
+  if(isRed){
+    digitalWrite(7, LOW);
+    digitalWrite(6, HIGH);
+  }else{
+    digitalWrite(6, !isRed);
+  }
+  delay(500);
+
+  
+    digitalWrite(5, isRed);
+    digitalWrite(6, false);
+    digitalWrite(7, !isRed);
+    digitalWrite(8, !isRed);
+    digitalWrite(9, isRed);
+}
+
+bool oldBumper = false;
+void ToggleBumper(){
+  if(oldBumper == false){
+    bumper.write(180);
+    SetTrafficLightsCar(true);
+    oldBumper = true;
+  }else{
+    bumper.write(0);
+    SetTrafficLightsCar(false);
+    oldBumper = false;
+  }
+}
 
 void setup() {
+
+pinMode(5, OUTPUT);
+pinMode(6, OUTPUT);
+pinMode(7, OUTPUT);
+pinMode(8, OUTPUT);
+pinMode(9, OUTPUT);
+
   Serial.begin(115200);
-  
-  // Initialize all subsystems
-  initSensors();
-  initTrafficLights();
-  initBumperServo();
-  
-  // Reserve 200 bytes for the inputString
-  inputString.reserve(200);
-}
+  Serial.setTimeout(50);
+  pinMode(A0, INPUT);
+	bumper.setPeriodHertz(50);    // standard 50 hz servo
+	bumper.attach(2, 500, 10000);
+  dht.begin();
 
+}
+float k = 180;
 void loop() {
-  // 1. Read Sensors continuously (non-blocking)
-  // Note: In a real app, use millis() timers here instead of delays
-  // But for now, we just check them when needed in the controller.
-  
-  // 2. Process Incoming Serial Commands from Python
-  if (stringComplete) {
-    // Trim whitespace (newlines)
-    inputString.trim(); 
-    
-    // Pass the message to your logic brain
-    processCameraMessage(inputString);
-    
-    // Clear for next message
-    inputString = "";
-    stringComplete = false;
+  if(analogRead(0) < 3900 && dht.readTemperature() <= 0){
+    MaxSpeed = MaxSpeedBadWeather;
+  }else{
+    MaxSpeed = MaxSpeedGoodWeather;
   }
-}
+  Serial.println(k);
 
-// Interrupt-like function to read Serial bytes as they arrive
-void serialEvent() {
-  while (Serial.available()) {
-    char inChar = (char)Serial.read();
-    inputString += inChar;
-    if (inChar == '\n') {
-      stringComplete = true;
-    }
+  
+  ToggleBumper();
+
+  delay(800);
+  while(Serial.available()){
+    CarSpeed =  Serial.readString().toInt();
   }
+
 }
