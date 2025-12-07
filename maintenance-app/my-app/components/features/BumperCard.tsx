@@ -12,12 +12,15 @@ interface BumperCardProps {
 }
 
 export function BumperCard({ bump, onEdit }: BumperCardProps) {
-  const formatDate = (dateString: string) => {
+  const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
+    return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
     });
   };
 
@@ -47,7 +50,7 @@ export function BumperCard({ bump, onEdit }: BumperCardProps) {
               Health: {Math.round(currentHealth)}
             </span>
             <span className="text-xs text-gray-400">
-              Updated: {formatDate(bump.last_updated)}
+              Updated: {formatDateTime(bump.last_updated)}
             </span>
           </div>
           {/* Health bar visualization */}
