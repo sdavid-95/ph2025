@@ -72,7 +72,7 @@ int MaxSpeedGoodWeather = 50;
 
 int wet_s = 0;
 int temp_s = 0;
-
+bool bprint = false;
 void loop()
 {
   if (analogRead(0) + wet_s < 3900 && dht.readTemperature() + temp_s <= 0)
@@ -100,10 +100,22 @@ void loop()
     wet_s = 0;
     temp_s = 0;
   }
+  if (CarSpeed == 9999)
+  {
+    bprint = !bprint;
+    CarSpeed = 0;
+  }
   if (millis() - oldMillis > 4000)
   {
-    oldMillis = millis();
-    Serial.println("Temp: " + String(dht.readTemperature() + temp_s) + +"% Wetness: " + String(analogRead(0) + wet_s) + " MaxSpeed: " + String(MaxSpeed));
+    if (bprint)
+    {
+      oldMillis = millis();
+      Serial.println("Temp: " + String(dht.readTemperature() + temp_s) + +"% Wetness: " + String(analogRead(0) + wet_s) + " MaxSpeed: " + String(MaxSpeed));
+    }
+    else
+    {
+      oldMillis = millis();
+    }
   }
 
   if (CarSpeed > MaxSpeed + 4)
