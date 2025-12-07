@@ -1,7 +1,6 @@
 import cv2
 import dlib
 import time
-import threading
 import math
 import serial
 import os
@@ -16,7 +15,6 @@ SUPABASE_URL = os.getenv('SUPABASE_URL', '')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY', '')
 SPEED_BUMP_ID = os.getenv('SPEED_BUMP_ID', '')  # UUID of the speed bump to update
 
-# Initialize Supabase client
 supabase: Client | None = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
@@ -26,82 +24,33 @@ if SUPABASE_URL and SUPABASE_KEY:
         print(f"Failed to initialize Supabase: {e}")
         supabase = None
 else:
-    print("Warning: Supabase credentials not found. Set SUPABASE_URL and SUPABASE_KEY environment variables.")
+    print("Warning: Supabase credentials not found. Set SUPABASE_URL and SUPABASE_KEY.")
 
 # --- ARDUINO CONFIGURATION ---
-# ARDUINO_PORT = os.getenv('ARDUINO_PORT', 'COM3')  # Change to your Arduino port
-# ARDUINO_BAUDRATE = 115200
-# try:
-#     arduino = serial.Serial(port=ARDUINO_PORT, baudrate=ARDUINO_BAUDRATE, timeout=.1)
-#     time.sleep(2)
-#     print(f"Arduino connected on {ARDUINO_PORT}")
-# except Exception as e:
-#     print(f"Warning: Could not connect to Arduino on {ARDUINO_PORT}: {e}")
-#     arduino = None
+ARDUINO_PORT = "COM3"
+ARDUINO_BAUDRATE = 115200
+try:
+    arduino = serial.Serial(port=ARDUINO_PORT, baudrate=ARDUINO_BAUDRATE, timeout=.1)
+    time.sleep(2)
+    print(f"Arduino connected on {ARDUINO_PORT}")
+except Exception as e:
+    print(f"Warning: Could not connect to Arduino on {ARDUINO_PORT}: {e}")
+    arduino = None
 
 # --- SPEED LIMIT CONFIGURATION ---
 SPEED_LIMIT_KMH = 55  # Speed limit in km/h
 
-carCascade = cv2.CascadeClassifier('myhaar.xml')
-video = cv2.VideoCapture('cars2.mp4')
+# --- VIDEO CONFIGURATION ---
+carCascade = cv2.CascadeClassifier('myhaar.xml')  # make sure this exists
+video = cv2.VideoCapture('car3.mp4')  # or 0 for webcam
 
 WIDTH = 1280
 HEIGHT = 720
+video.set(cv2.CAP_PROP_FRAME_WIDTH, WIDTH)
+video.set(cv2.CAP_PROP_FRAME_HEIGHT, HEIGHT)
 
-
-def estimateSpeed(location1, location2):
-    d_pixels = math.sqrt(math.pow(location2[0] - location1[0], 2) + math.pow(location2[1] - location1[1], 2))
-    # ppm = location2[2] / carWidth
-    ppm = 14
-    d_meters = d_pixels / ppm
-    #print("d_pixels=" + str(d_pixels), "d_meters=" + str(d_meters))
-    fps = 18
-    speed = d_meters * fps * 3.6
-    return speed
-
-
-# Function to update Supabase with car count
-def update_supabase_count(count: int):
-    if not supabase:
-        print("[SUPABASE] Warning: Supabase client not initialized, cannot update count")
-        return
-    if not SPEED_BUMP_ID:
-        print("[SUPABASE] Warning: SPEED_BUMP_ID not set, cannot update count")
-        return
-    
-    try:
-        current_time = datetime.now(timezone.utc).isoformat()
-        print(f"[SUPABASE] Attempting to update: car_count = {count}, time = {current_time}")
-        result = supabase.table('speed_bumps').update({
-            'car_count': count,
-            'last_updated': current_time
-        }).eq('id', SPEED_BUMP_ID).execute()
-        
-        if result.data:
-            print(f"[SUPABASE] Successfully updated: car_count = {count}")
-        else:
-            print(f"[SUPABASE] Update returned no data. Check if speed_bump_id '{SPEED_BUMP_ID}' exists.")
-    except Exception as e:
-        print(f"[SUPABASE] Error updating Supabase: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-# Function to send command to Arduino
-def send_arduino_command(command: str):
-    """Send command to Arduino: 'R' = Raise, 'S' = Safe, 'E' = Emergency"""
-    # Arduino connection is commented out, so this function does nothing
-    # if arduino:
-    #     try:
-    #         arduino.write(command.encode())
-    #         print(f"Sent to Arduino: {command}")
-    #     except Exception as e:
-    #         print(f"Error sending to Arduino: {e}")
-    pass
-
-
-# Load initial car count from Supabase
-car_count = 0  # Total count of speeding cars
+# --- CAR COUNT (from Supabase) ---
+car_count = 0
 if supabase and SPEED_BUMP_ID:
     try:
         result = supabase.table('speed_bumps').select('car_count').eq('id', SPEED_BUMP_ID).execute()
@@ -111,267 +60,275 @@ if supabase and SPEED_BUMP_ID:
     except Exception as e:
         print(f"Error loading initial count from Supabase: {e}")
 
-# Track last Arduino command to avoid spamming
-COMMAND_THROTTLE = 1.0  # Minimum seconds between Arduino commands
+
+# --- UTILS ---
+
+def update_supabase_count(count: int):
+    if not supabase:
+        print("[SUPABASE] Warning: Supabase client not initialized, cannot update count")
+        return
+    if not SPEED_BUMP_ID:
+        print("[SUPABASE] Warning: SPEED_BUMP_ID not set, cannot update count")
+        return
+
+    try:
+        current_time = datetime.now(timezone.utc).isoformat()
+        print(f"[SUPABASE] Updating: car_count={count}, time={current_time}")
+        result = supabase.table('speed_bumps').update({
+            'car_count': count,
+            'last_updated': current_time
+        }).eq('id', SPEED_BUMP_ID).execute()
+
+        if result.data:
+            print(f"[SUPABASE] Successfully updated: car_count={count}")
+        else:
+            print(f"[SUPABASE] Update returned no data. Check speed_bump_id='{SPEED_BUMP_ID}'.")
+    except Exception as e:
+        print(f"[SUPABASE] Error updating Supabase: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def send_arduino_command(command: str):
+    """Send command to Arduino (here we send speed as text with newline)."""
+    if arduino:
+        try:
+            arduino.write(command.encode())
+            print(f"[ARDUINO] Sent: {command.strip()}")
+        except Exception as e:
+            print(f"[ARDUINO] Error sending: {e}")
+
+
+def estimate_speed_fast(prev_loc, curr_loc, dt: float) -> float:
+    """
+    Estimate speed based on movement between two bounding boxes and time delta.
+    prev_loc, curr_loc = [x, y, w, h]
+    dt = time between frames (seconds)
+    """
+    (x1, y1, w1, h1) = prev_loc
+    (x2, y2, w2, h2) = curr_loc
+
+    # Euclidean distance in pixels
+    d_pixels = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+    if dt <= 0:
+        return 0.0
+
+    # pixels → meters (YOU MUST TUNE THIS for your camera/video)
+    PIXELS_PER_METER = 25.0  # play with 14–40 until speeds make sense
+    d_meters = d_pixels / PIXELS_PER_METER
+
+    speed_m_per_s = d_meters / dt
+    speed_kmh = speed_m_per_s * 3.6
+    return speed_kmh
+
+
+# --- MAIN TRACKING LOGIC ---
 
 def trackMultipleObjects():
-    global car_count  # Access global car_count variable
-    
-    rectangleColor = (0, 255, 0)
+    global car_count
+
     frameCounter = 0
+
+    carTracker: dict[int, dlib.correlation_tracker] = {}
+    carLocationPrev: dict[int, list] = {}   # previous bbox per car
+    carLastTime: dict[int, float] = {}      # last timestamp per car
+    carSpeed: dict[int, float | None] = {}  # smoothed speed per car
+    counted_speeders: set[int] = set()      # cars already counted for speeding
+
     currentCarID = 0
-    fps = 0
-    
-    carTracker = {}
-    carNumbers = {}
-    carLocation1 = {}
-    carLocation2 = {}
-    speed = [None] * 1000
-    passed_cars = set()  # Track cars that have been counted
-    car_exit_threshold = 30  # Frames after car disappears before counting
-    car_exit_counter = {}  # Track frames since car was last seen
-    last_arduino_command_local = None  # Track last command sent to Arduino (local to function)
-    last_command_time_local = 0  # Track when last command was sent (local to function)
-    speeding_cars_seen = set()  # Track cars that have been seen speeding (to ensure they get counted)
-    
-    # Write output to video file
-    out = cv2.VideoWriter('outpy.avi',cv2.VideoWriter_fourcc('M','J','P','G'), 10, (WIDTH,HEIGHT))
+
+    last_arduino_command = None
+    last_command_time = 0
 
     while True:
         start_time = time.time()
+
         rc, image = video.read()
-        if type(image) == type(None):
+        if not rc or image is None:
+            print("Video finished or cannot read frame.")
             break
-        
+
         image = cv2.resize(image, (WIDTH, HEIGHT))
         resultImage = image.copy()
-        
-        frameCounter = frameCounter + 1
-        
-        carIDtoDelete = []
+        frameCounter += 1
 
-        for carID in carTracker.keys():
-            trackingQuality = carTracker[carID].update(image)
-            
+        # --- UPDATE EXISTING TRACKERS ---
+        cars_to_delete = []
+        for carID, tracker in carTracker.items():
+            trackingQuality = tracker.update(image)
             if trackingQuality < 7:
-                carIDtoDelete.append(carID)
-                
-        # Clean up cars that are being removed from tracker
-        # Note: Speeding cars are already counted when first detected, so we just mark them as passed
-        for carID in carIDtoDelete:
-            # Mark as passed (already counted if it was speeding)
-            if carID not in passed_cars:
-                passed_cars.add(carID)
-                if speed[carID] is not None:
-                    if speed[carID] > SPEED_LIMIT_KMH:
-                        print(f"[TRACKER REMOVAL] Car {carID} removed (was already counted as speeding at {int(speed[carID])} km/h)")
-                    else:
-                        print(f"[TRACKER REMOVAL] Car {carID} removed at {int(speed[carID])} km/h (within limit - not counted)")
-                else:
-                    print(f"[TRACKER REMOVAL] Car {carID} removed but speed was never calculated (speed=None)")
-            else:
-                print(f"[TRACKER REMOVAL] Car {carID} removed (already counted)")
-            
-            print ('Removing carID ' + str(carID) + ' from list of trackers.')
-            print ('Removing carID ' + str(carID) + ' previous location.')
-            print ('Removing carID ' + str(carID) + ' current location.')
+                cars_to_delete.append(carID)
+
+        for carID in cars_to_delete:
+            print(f"[TRACKER] Removing carID {carID}")
             carTracker.pop(carID, None)
-            carLocation1.pop(carID, None)
-            carLocation2.pop(carID, None)
-            # Clean up exit counter
-            if carID in car_exit_counter:
-                car_exit_counter.pop(carID, None)
-        
-        if not (frameCounter % 10):
+            carLocationPrev.pop(carID, None)
+            carLastTime.pop(carID, None)
+            carSpeed.pop(carID, None)
+
+        # --- DETECTION EVERY N FRAMES ---
+        if frameCounter % 5 == 0:  # reduce to 3 for more frequent detection if CPU allows
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             cars = carCascade.detectMultiScale(gray, 1.1, 13, 18, (24, 24))
-            
+
             for (_x, _y, _w, _h) in cars:
-                x = int(_x)
-                y = int(_y)
-                w = int(_w)
-                h = int(_h)
-            
+                x, y, w, h = int(_x), int(_y), int(_w), int(_h)
+
                 x_bar = x + 0.5 * w
                 y_bar = y + 0.5 * h
-                
+
                 matchCarID = None
-            
-                for carID in carTracker.keys():
-                    trackedPosition = carTracker[carID].get_position()
-                    
-                    t_x = int(trackedPosition.left())
-                    t_y = int(trackedPosition.top())
-                    t_w = int(trackedPosition.width())
-                    t_h = int(trackedPosition.height())
-                    
+
+                # Try to match detected bbox with existing trackers
+                for carID, tracker in carTracker.items():
+                    pos = tracker.get_position()
+                    t_x = int(pos.left())
+                    t_y = int(pos.top())
+                    t_w = int(pos.width())
+                    t_h = int(pos.height())
+
                     t_x_bar = t_x + 0.5 * t_w
                     t_y_bar = t_y + 0.5 * t_h
-                
-                    if ((t_x <= x_bar <= (t_x + t_w)) and (t_y <= y_bar <= (t_y + t_h)) and (x <= t_x_bar <= (x + w)) and (y <= t_y_bar <= (y + h))):
+
+                    if (
+                        t_x <= x_bar <= t_x + t_w and
+                        t_y <= y_bar <= t_y + t_h and
+                        x <= t_x_bar <= x + w and
+                        y <= t_y_bar <= y + h
+                    ):
                         matchCarID = carID
-                
+                        break
+
                 if matchCarID is None:
-                    print ('Creating new tracker ' + str(currentCarID))
-                    
+                    print(f"[TRACKER] Creating new tracker {currentCarID}")
                     tracker = dlib.correlation_tracker()
                     tracker.start_track(image, dlib.rectangle(x, y, x + w, y + h))
                     carTracker[currentCarID] = tracker
-                    carLocation1[currentCarID] = [x, y, w, h]
+                    carLocationPrev[currentCarID] = [x, y, w, h]
+                    carLastTime[currentCarID] = time.time()
+                    carSpeed[currentCarID] = None
+                    currentCarID += 1
 
-                    currentCarID = currentCarID + 1
-        
-        #cv2.line(resultImage,(0,480),(1280,480),(255,0,0),5)
-
-
-        # Track currently visible cars
-        current_car_ids = set(carTracker.keys())
-        
-        # Initialize exit counter for all currently tracked cars
-        for carID in current_car_ids:
-            if carID not in car_exit_counter:
-                car_exit_counter[carID] = 0
-        
-        # Update exit counters and check for exited cars
-        # Check all cars that were previously tracked (including those in exit_counter)
-        all_previous_cars = set(car_exit_counter.keys())
-        
-        for carID in list(all_previous_cars):
-            if carID in current_car_ids:
-                # Car is still visible, reset counter
-                car_exit_counter[carID] = 0
-            else:
-                # Car not visible, increment counter
-                car_exit_counter[carID] = car_exit_counter.get(carID, 0) + 1
-                
-                # If car has been gone long enough, just mark it as passed
-                # Note: Speeding cars are already counted when first detected, so we just clean up
-                if car_exit_counter[carID] > car_exit_threshold and carID not in passed_cars:
-                    # Mark as passed (already counted if it was speeding when detected)
-                    passed_cars.add(carID)
-                    if speed[carID] is not None:
-                        if speed[carID] > SPEED_LIMIT_KMH:
-                            print(f"[EXIT COUNTER] Car {carID} exited (was already counted as speeding at {int(speed[carID])} km/h)")
-                        else:
-                            print(f"[EXIT COUNTER] Car {carID} exited at {int(speed[carID])} km/h (within limit - not counted)")
-                    else:
-                        print(f"[EXIT COUNTER] Car {carID} exited but speed was never calculated (speed=None)")
-                    # Clean up
-                    if carID in car_exit_counter:
-                        del car_exit_counter[carID]
-        
-        # Track highest speed in current frame for Arduino commands
-        highest_speed = 0
+        # --- SPEED & DRAWING ---
+        highest_speed = 0.0
         has_speeding_car = False
-        
-        for carID in carTracker.keys():
-            trackedPosition = carTracker[carID].get_position()
-                    
-            t_x = int(trackedPosition.left())
-            t_y = int(trackedPosition.top())
-            t_w = int(trackedPosition.width())
-            t_h = int(trackedPosition.height())
-            
-            # Determine color based on speed
-            if speed[carID] is not None:
-                if speed[carID] > SPEED_LIMIT_KMH:
-                    rectangleColor = (0, 0, 255)  # Red for speeding
-                    has_speeding_car = True
-                    if speed[carID] > highest_speed:
-                        highest_speed = speed[carID]
-                    # Count and update Supabase immediately when car is first detected speeding
-                    if carID not in passed_cars:
-                        passed_cars.add(carID)
-                        car_count += 1
-                        speeding_cars_seen.add(carID)
-                        print(f"[SPEEDING DETECTED] Car {carID} is speeding at {int(speed[carID])} km/h! Total count: {car_count}")
-                        # Update Supabase immediately when a speeding car is detected
-                        update_supabase_count(car_count)
-                else:
-                    rectangleColor = (0, 255, 0)  # Green for safe
+
+        for carID, tracker in carTracker.items():
+            pos = tracker.get_position()
+            t_x = int(pos.left())
+            t_y = int(pos.top())
+            t_w = int(pos.width())
+            t_h = int(pos.height())
+
+            curr_loc = [t_x, t_y, t_w, t_h]
+            now = time.time()
+
+            # Calculate speed if we have a previous location
+            if carID in carLocationPrev and carID in carLastTime:
+                dt = now - carLastTime[carID]
+                if dt > 0.01:  # avoid division by near-zero
+                    instant_speed = estimate_speed_fast(carLocationPrev[carID], curr_loc, dt)
+
+                    # Smooth speed
+                    if carSpeed[carID] is None:
+                        carSpeed[carID] = instant_speed
+                    else:
+                        alpha = 0.7  # 70% previous, 30% new
+                        carSpeed[carID] = alpha * carSpeed[carID] + (1 - alpha) * instant_speed
+
+                    carLocationPrev[carID] = curr_loc
+                    carLastTime[carID] = now
+
+            speed_val = carSpeed.get(carID, None)
+
+            # Color based on speed
+            if speed_val is None:
+                rect_color = (255, 255, 0)  # yellow - unknown yet
+            elif speed_val > SPEED_LIMIT_KMH:
+                rect_color = (0, 0, 255)  # red
+                has_speeding_car = True
+                if speed_val > highest_speed:
+                    highest_speed = speed_val
+
+                # Count this car as speeder only once
+                if carID not in counted_speeders:
+                    counted_speeders.add(carID)
+                    car_count += 1
+                    print(f"[SPEEDING] Car {carID} at {int(speed_val)} km/h. Total count={car_count}")
+                    update_supabase_count(car_count)
             else:
-                rectangleColor = (255, 255, 0)  # Yellow for unknown
-            
-            cv2.rectangle(resultImage, (t_x, t_y), (t_x + t_w, t_y + t_h), rectangleColor, 4)
-            
-            # speed estimation
-            carLocation2[carID] = [t_x, t_y, t_w, t_h]
-            
-            # Initialize exit counter for new cars
-            if carID not in car_exit_counter:
-                car_exit_counter[carID] = 0
-        
-        end_time = time.time()
-        
-        if not (end_time == start_time):
-            fps = 1.0/(end_time - start_time)
-        
-        #cv2.putText(resultImage, 'FPS: ' + str(int(fps)), (620, 30),cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 255), 2)
+                rect_color = (0, 255, 0)  # green
 
+            # Draw bbox
+            cv2.rectangle(resultImage, (t_x, t_y), (t_x + t_w, t_y + t_h), rect_color, 3)
 
-        # Calculate speed for all tracked cars using carLocation1 and carLocation2
-        # Note: carLocation1 uses the same carID as carTracker
-        for carID in list(carLocation1.keys()): 
-            if frameCounter % 1 == 0:
-                if carID not in carLocation2:
-                    continue
-                    
-                [x1, y1, w1, h1] = carLocation1[carID]
-                [x2, y2, w2, h2] = carLocation2[carID]
-        
-                # print 'previous location: ' + str(carLocation1[carID]) + ', current location: ' + str(carLocation2[carID])
-                carLocation1[carID] = [x2, y2, w2, h2]
-        
-                # print 'new previous location: ' + str(carLocation1[carID])
-                if [x1, y1, w1, h1] != [x2, y2, w2, h2]:
-                    if (speed[carID] == None or speed[carID] == 0) and y1 >= 275 and y1 <= 285:
-                        calculated_speed = estimateSpeed([x1, y1, w1, h1], [x2, y2, w2, h2])
-                        speed[carID] = calculated_speed
-                        if calculated_speed > SPEED_LIMIT_KMH:
-                            print(f"[SPEED CALC] Car {carID} calculated speed: {int(calculated_speed)} km/h (SPEEDING)")
-                        else:
-                            print(f"[SPEED CALC] Car {carID} calculated speed: {int(calculated_speed)} km/h (safe)")
+            # Show speed text
+            if speed_val is not None:
+                text_color = (0, 0, 255) if speed_val > SPEED_LIMIT_KMH else (0, 255, 0)
+                cv2.putText(
+                    resultImage,
+                    f"{int(speed_val)} km/h",
+                    (t_x, max(t_y - 5, 0)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    text_color,
+                    2
+                )
 
-                    #if y1 > 275 and y1 < 285:
-                    if speed[carID] != None and y1 >= 180:
-                        # Color text based on speed
-                        text_color = (0, 0, 255) if speed[carID] > SPEED_LIMIT_KMH else (0, 255, 0)
-                        cv2.putText(resultImage, str(int(speed[carID])) + " km/hr", (int(x1 + w1/2), int(y1-5)),cv2.FONT_HERSHEY_SIMPLEX, 0.75, text_color, 2)
-                        
-                    #print ('CarID ' + str(i) + ': speed is ' + str("%.2f" % round(speed[i], 0)) + ' km/h.\n')
-
-                    #else:
-                    #    cv2.putText(resultImage, "Far Object", (int(x1 + w1/2), int(y1)),cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-
-                        #print ('CarID ' + str(i) + ' Location1: ' + str(carLocation1[i]) + ' Location2: ' + str(carLocation2[i]) + ' speed is ' + str("%.2f" % round(speed[i], 0)) + ' km/h.\n')
-        
-        # Send commands to Arduino based on detected speeds (throttled)
+        # --- ARDUINO COMMANDS (THROTTLED) ---
         current_time_sec = time.time()
-        new_command = 'R' if has_speeding_car else 'S'
-        
-        # Only send if command changed or enough time has passed
-        if (new_command != last_arduino_command_local or 
-            (current_time_sec - last_command_time_local) > COMMAND_THROTTLE):
-            #send_arduino_command(new_command)
-            last_arduino_command_local = new_command
-            last_command_time_local = current_time_sec
-        
-        # Display car count on frame
-        cv2.putText(resultImage, f"Speeding Cars Count: {car_count}", (20, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(resultImage, f"Speed Limit: {SPEED_LIMIT_KMH} km/h", (20, 60), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
+        if has_speeding_car and highest_speed > 0:
+            new_command = f"{int(highest_speed)}\n"
+            if new_command != last_arduino_command or current_time_sec - last_command_time > 0.5:
+                send_arduino_command(new_command)
+                last_arduino_command = new_command
+                last_command_time = current_time_sec
+        else:
+            # reset, so next speeding event will send again
+            last_arduino_command = None
+
+        # --- UI OVERLAYS ---
+        cv2.putText(
+            resultImage,
+            f"Speeding Cars Count: {car_count}",
+            (20, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2
+        )
+        cv2.putText(
+            resultImage,
+            f"Speed Limit: {SPEED_LIMIT_KMH} km/h",
+            (20, 60),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2
+        )
+
+        end_time = time.time()
+        fps = 1.0 / (end_time - start_time) if end_time > start_time else 0
+        cv2.putText(
+            resultImage,
+            f"FPS: {int(fps)}",
+            (WIDTH - 150, 30),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2
+        )
+
         cv2.imshow('result', resultImage)
-        # Write the frame into the file 'output.avi'
-        #out.write(resultImage)
 
-
-        if cv2.waitKey(33) == 27:
+        # ESC to quit
+        if cv2.waitKey(1) & 0xFF == 27:
             break
-    
+
+    video.release()
     cv2.destroyAllWindows()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     trackMultipleObjects()
