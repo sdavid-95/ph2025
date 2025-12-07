@@ -6,11 +6,6 @@ Servo bumper;
 
 DHT dht(1, DHT22);
 
-int CarSpeed = 0;
-int MaxSpeed;
-int MaxSpeedBadWeather = 30;
-int MaxSpeedGoodWeather = 50;
-
 void SetTrafficLightsCar(bool isRed)
 {
   if (isRed)
@@ -70,10 +65,17 @@ void setup()
 }
 
 uint oldMillis = 0;
+int CarSpeed = 0;
+int MaxSpeed;
+int MaxSpeedBadWeather = 30;
+int MaxSpeedGoodWeather = 50;
+
+int wet_s = 0;
+int temp_s = 0;
 
 void loop()
 {
-  if (analogRead(0) < 3900 && dht.readTemperature() <= 0)
+  if (analogRead(0) + wet_s < 3900 && dht.readTemperature() + temp_s <= 0)
   {
     MaxSpeed = MaxSpeedBadWeather;
   }
@@ -88,22 +90,22 @@ void loop()
   }
   if (CarSpeed == 9898)
   {
-    MaxSpeed = 30;
     CarSpeed = 0;
+    wet_s = -2000;
+    temp_s = -30;
   }
   if (CarSpeed == 8989)
   {
-    MaxSpeed = 50;
     CarSpeed = 0;
+    wet_s = 0;
+    temp_s = 0;
   }
-
-  if (millis() - oldMillis > 2000)
+  if (millis() - oldMillis > 4000)
   {
-    Serial.println("hewij");
     oldMillis = millis();
+    Serial.println("Temp: " + String(dht.readTemperature() + temp_s) + +"% Wetness: " + String(analogRead(0) + wet_s) + " MaxSpeed: " + String(MaxSpeed));
   }
 
-  Serial.println("MaxSpeed: " + String(MaxSpeed));
   if (CarSpeed > MaxSpeed + 4)
   {
     ToggleBumper();
