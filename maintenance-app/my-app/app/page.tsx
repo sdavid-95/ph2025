@@ -9,7 +9,7 @@ import { BumperActionModal } from '@/components/features/BumperActionModal';
 import { toast } from 'sonner';
 
 export default function Home() {
-  const [activeFilter, setActiveFilter] = useState<'all' | 'damaged'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'damaged' | 'critical'>('all');
   const [selectedBump, setSelectedBump] = useState<SpeedBump | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -33,12 +33,22 @@ export default function Home() {
     setSelectedBump(null);
   };
 
-  const handleUpdate = async (id: string, status: BumpStatus) => {
+  const handleUpdate = async (id: string, health: number) => {
     try {
+      // Calculate status based on health
+      const getStatusFromHealth = (health: number): BumpStatus => {
+        if (health >= 7000) return 'Good';
+        if (health >= 3000) return 'Damaged';
+        return 'Critical';
+      };
+
+      const newStatus = getStatusFromHealth(health);
+
       const { error } = await supabase
         .from('speed_bumps')
         .update({
-          status,
+          health: health,
+          status: newStatus,
           last_updated: new Date().toISOString(),
         })
         .eq('id', id);
@@ -47,11 +57,11 @@ export default function Home() {
         throw error;
       }
 
-      toast.success('Status Updated!');
+      toast.success('Health Updated!');
       setRefreshTrigger((prev) => prev + 1);
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : 'Failed to update status';
+        error instanceof Error ? error.message : 'Failed to update health';
       toast.error(`Error: ${errorMessage}`);
       throw error;
     }

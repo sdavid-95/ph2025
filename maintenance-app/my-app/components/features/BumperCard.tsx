@@ -21,6 +21,16 @@ export function BumperCard({ bump, onEdit }: BumperCardProps) {
     });
   };
 
+  // Automatically determine status based on health
+  const getStatusFromHealth = (health: number): 'Good' | 'Damaged' | 'Critical' => {
+    if (health >= 7000) return 'Good';
+    if (health >= 3000) return 'Damaged';
+    return 'Critical';
+  };
+
+  const currentHealth = bump.health || 10000;
+  const currentStatus = getStatusFromHealth(currentHealth);
+
   return (
     <Card className="min-h-[60px] py-4">
       <div className="flex items-start justify-between gap-4">
@@ -32,13 +42,26 @@ export function BumperCard({ bump, onEdit }: BumperCardProps) {
             <p className="text-sm text-gray-500 mb-2">{bump.exact_location}</p>
           )}
           <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge status={bump.status} />
+            <StatusBadge status={currentStatus} />
             <span className="text-sm font-semibold text-gray-700">
-              Cars: {bump.car_count || 0}
+              Health: {Math.round(currentHealth)}
             </span>
             <span className="text-xs text-gray-400">
               Updated: {formatDate(bump.last_updated)}
             </span>
+          </div>
+          {/* Health bar visualization */}
+          <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+            <div
+              className={`h-2 rounded-full transition-all ${
+                currentHealth >= 7000
+                  ? 'bg-green-500'
+                  : currentHealth >= 3000
+                  ? 'bg-yellow-500'
+                  : 'bg-red-500'
+              }`}
+              style={{ width: `${Math.max(0, Math.min(100, (currentHealth / 10000) * 100))}%` }}
+            />
           </div>
         </div>
         <button
