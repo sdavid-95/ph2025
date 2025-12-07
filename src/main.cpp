@@ -7,7 +7,7 @@ Servo bumper;
 DHT dht(1, DHT22);
 
 int CarSpeed = 0;
-int MaxSpeed = 50;
+int MaxSpeed;
 int MaxSpeedBadWeather = 30;
 int MaxSpeedGoodWeather = 50;
 
@@ -66,9 +66,11 @@ void setup()
   bumper.setPeriodHertz(150); // standard 50 hz servo
   bumper.attach(2, 500, 2500);
   dht.begin();
+  bumper.write(180);
 }
 
-float k = 180;
+uint oldMillis = 0;
+
 void loop()
 {
   if (analogRead(0) < 3900 && dht.readTemperature() <= 0)
@@ -84,6 +86,24 @@ void loop()
   {
     CarSpeed = Serial.readString().toInt();
   }
+  if (CarSpeed == 9898)
+  {
+    MaxSpeed = 30;
+    CarSpeed = 0;
+  }
+  if (CarSpeed == 8989)
+  {
+    MaxSpeed = 50;
+    CarSpeed = 0;
+  }
+
+  if (millis() - oldMillis > 2000)
+  {
+    Serial.println(MaxSpeed);
+    oldMillis = millis();
+  }
+
+  Serial.println("MaxSpeed: " + String(MaxSpeed));
   if (CarSpeed > MaxSpeed + 4)
   {
     ToggleBumper();
