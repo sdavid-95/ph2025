@@ -7,7 +7,7 @@ import { BumperCard } from './BumperCard';
 import { Loader2 } from 'lucide-react';
 
 interface BumperListProps {
-  filter: 'all' | 'damaged';
+  filter: 'all' | 'damaged' | 'critical';
   onEdit: (bump: SpeedBump) => void;
   refreshTrigger: number;
 }
@@ -27,22 +27,34 @@ export function BumperList({
       setError(null);
 
       try {
-        let query = supabase
+        // Fetch all bumps first
+        const { data, error: fetchError } = await supabase
           .from('speed_bumps')
           .select('*')
           .order('last_updated', { ascending: false });
-
-        if (filter === 'damaged') {
-          query = query.in('status', ['Damaged', 'Critical']);
-        }
-
-        const { data, error: fetchError } = await query;
 
         if (fetchError) {
           throw fetchError;
         }
 
-        setBumps(data || []);
+        // Filter based on health values on the client side
+        let filteredBumps = data || [];
+        
+        if (filter === 'damaged') {
+          // Show bumps with health < 7000 and >= 3000 OR status Damaged
+          filteredBumps = filteredBumps.filter(
+            (bump) => 
+              (bump.health < 7000 && bump.health >= 3000) ||
+              bump.status === 'Damaged'
+          );
+        } else if (filter === 'critical') {
+          // Show bumps with health < 3000 OR status Critical
+          filteredBumps = filteredBumps.filter(
+            (bump) => bump.health < 3000 || bump.status === 'Critical'
+          );
+        }
+
+        setBumps(filteredBumps);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Failed to fetch speed bumps'
@@ -77,7 +89,9 @@ export function BumperList({
     return (
       <div className="text-center py-12">
         <p className="text-lg text-gray-600">
-          {filter === 'damaged'
+          {filter === 'critical'
+            ? 'No critical speed bumps found.'
+            : filter === 'damaged'
             ? 'No damaged speed bumps found.'
             : 'No speed bumps found.'}
         </p>

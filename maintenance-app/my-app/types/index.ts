@@ -6,6 +6,6 @@ export interface SpeedBump {
   exact_location: string;
   status: BumpStatus;
   last_updated: string;
-  car_count: number;
+  health: number;  // Health points (0-10000)
 }
 
