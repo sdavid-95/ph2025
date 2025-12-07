@@ -116,14 +116,10 @@ def send_arduino_command(command: str):
     """Send command to Arduino (here we send speed as text with newline)."""
     if arduino:
         try:
-            # Ensure the command is an integer string followed by a newline
-            if not command.endswith('\n'):
-                command += '\n'
-            
-            arduino.write(command.encode('ascii'))
+            arduino.write(command.encode())
             print(f"[ARDUINO] Sent: {command.strip()}")
         except Exception as e:
-            print(f"[ARDUINO] Error sending command '{command.strip()}': {e}")
+            print(f"[ARDUINO] Error sending: {e}")
     else:
         print(f"[ARDUINO] Not connected, would have sent: {command.strip()}")
 
@@ -328,25 +324,16 @@ def trackMultipleObjects():
                     2
                 )
 
-        # --- ARDUINO COMMANDS (Fixed: Only Send Speeding Data) ---
+        # --- ARDUINO COMMANDS (THROTTLED) ---
         current_time_sec = time.time()
-        
-        if highest_speeding_speed > 0:
-            # We have a speeding car, send its speed
-            speed_to_send = int(highest_speeding_speed)
-            new_command = f"{speed_to_send}\n"
-            
-            # Send immediately if the speed has changed OR if the throttle time has passed
-            if new_command != last_arduino_command or current_time_sec - last_command_time > 0.5:
-                send_arduino_command(new_command)
-                last_arduino_command = new_command
-                last_command_time = current_time_sec
+        if has_speeding_car and highest_speeding_speed > 0:
+            new_command = f"{int(highest_speeding_speed)}"
+            send_arduino_command(new_command)
+            last_arduino_command = new_command
+            last_command_time = current_time_sec
         else:
-            # No car is speeding. Do NOT send 0, but clear the last command state
-            # so that when a speeding event starts, the speed is sent immediately.
+            # reset, so next speeding event will send again
             last_arduino_command = None
-            # last_command_time is irrelevant here
-        
 
         # --- UI OVERLAYS ---
         cv2.putText(
