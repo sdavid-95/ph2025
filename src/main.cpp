@@ -99,7 +99,7 @@ void loop()
 
   if (millis() - oldMillis > 2000)
   {
-    Serial.println(MaxSpeed);
+    Serial.println("hewij");
     oldMillis = millis();
   }
 
