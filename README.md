@@ -1,1 +1,2 @@
-<img width="810" height="718" alt="image" src="https://github.com/user-attachments/assets/1b00a6a7-a3ea-4994-8507-a9a035e25b93" />
+# Electrical Scheme
+<img width="1169" height="827" alt="Schematic_seebump_2025-12-07" src="https://github.com/user-attachments/assets/55c2c79a-bfc6-4a08-abb6-2332350e76a4" />
